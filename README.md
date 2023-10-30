@@ -3,6 +3,12 @@ Custom ESP8266 Library for InfoGlobe Controller
 
 This is a modified version of the [ESP8266 Library for Arduino](https://github.com/esp8266/Arduino) for the InfoGlobe Controller project. It is based on [Release 3.0.2](https://github.com/esp8266/Arduino/releases/tag/3.0.2) since this is the last release that did not have serious IR timing issues.
 
+To use this library, add the following URL to your board manager URLs list:
+
+```
+	https://raw.githubusercontent.com/DavidBerdik/InfoGlobe-Controller-ESP8266-Library/master/package_esp8266-infoglobe_index.json
+```
+
 The content of the original project's README follows:
 
 # Quick links
