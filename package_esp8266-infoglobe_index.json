@@ -10,7 +10,7 @@
       },
       "platforms": [
         {
-          "category": "ESP8266-InfoGlobe",
+          "category": "ESP8266",
           "name": "esp8266-infoglobe",
           "url": "https://github.com/DavidBerdik/InfoGlobe-Controller-ESP8266-Library/releases/download/1.0.0-InfoGlobe/esp8266-infoglobe-1.0.0.zip",
           "version": "1.0.0",
