@@ -1,12 +1,12 @@
 {
    "packages": [
       {
-         "name": "esp8266",
-         "maintainer": "ESP8266 Community",
-         "websiteURL": "https://github.com/esp8266/Arduino",
-         "email": "ivan@esp8266.com",
+         "name": "ESP8266 Library for InfoGlobe Controller",
+         "maintainer": "David Berdik",
+         "websiteURL": "https://github.com/DavidBerdik/InfoGlobe-Controller-ESP8266-Library",
+         "email": "no@email.com",
          "help": {
-            "online": "https://esp8266.com/arduino"
+            "online": "https://github.com/DavidBerdik/InfoGlobe-Controller-ESP8266-Library"
          },
          "platforms": [
             {
