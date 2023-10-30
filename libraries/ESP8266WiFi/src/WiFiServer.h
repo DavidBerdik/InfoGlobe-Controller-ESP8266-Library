@@ -23,14 +23,13 @@
 #define wifiserver_h
 
 extern "C" {
-  #include <wl_definitions.h>
+  #include "wl_definitions.h"
 
   struct tcp_pcb;
 }
 
-#include <Server.h>
-#include <IPAddress.h>
-#include <lwip/err.h>
+#include "Server.h"
+#include "IPAddress.h"
 
 // lwIP-v2 backlog facility allows to keep memory safe by limiting the
 // maximum number of incoming *pending clients*.  Default number of possibly
@@ -66,7 +65,7 @@ extern "C" {
 class ClientContext;
 class WiFiClient;
 
-class WiFiServer {
+class WiFiServer : public Server {
   // Secure server needs access to all the private entries here
 protected:
   uint16_t _port;
@@ -81,39 +80,29 @@ public:
   WiFiServer(const IPAddress& addr, uint16_t port);
   WiFiServer(uint16_t port);
   virtual ~WiFiServer() {}
-  WiFiClient accept(); // https://www.arduino.cc/en/Reference/EthernetServerAccept
-  WiFiClient available(uint8_t* status = NULL) __attribute__((deprecated("Renamed to accept().")));
+  WiFiClient available(uint8_t* status = NULL);
   bool hasClient();
-  // hasClientData():
-  // returns the amount of data available from the first client
-  // or 0 if there is none
-  size_t hasClientData();
-  // hasMaxPendingClients():
-  // returns true if the queue of pending clients is full
-  bool hasMaxPendingClients();
   void begin();
   void begin(uint16_t port);
   void begin(uint16_t port, uint8_t backlog);
   void setNoDelay(bool nodelay);
   bool getNoDelay();
+  virtual size_t write(uint8_t);
+  virtual size_t write(const uint8_t *buf, size_t size);
   uint8_t status();
   uint16_t port() const;
   void close();
   void stop();
 
+  using Print::write;
   using ClientType = WiFiClient;
 
 protected:
-  err_t  _accept(tcp_pcb* newpcb, err_t err);
+  long _accept(tcp_pcb* newpcb, long err);
   void   _discard(ClientContext* client);
 
-  static err_t _s_accept(void *arg, tcp_pcb* newpcb, err_t err);
+  static long _s_accept(void *arg, tcp_pcb* newpcb, long err);
   static void _s_discard(void* server, ClientContext* ctx);
-
-#if CORE_MOCK
-  void _mockUnclaimed ();
-#endif
-
 };
 
 #endif

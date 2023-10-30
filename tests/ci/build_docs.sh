@@ -4,5 +4,6 @@
 
 set -ev
 
-root=$(git rev-parse --show-toplevel)
-env SPHINXOPTS="-W" make -C $root/doc html
+cd $TRAVIS_BUILD_DIR/doc
+
+SPHINXOPTS="-W" make html

@@ -19,3 +19,4 @@ enablePhaseLockedWaveform	KEYWORD2
 # Constants (LITERAL1)
 #######################################
 INPUT_PULLDOWN_16	LITERAL1
+PWMRANGE	LITERAL1

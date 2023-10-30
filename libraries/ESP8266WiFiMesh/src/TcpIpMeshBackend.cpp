@@ -533,7 +533,7 @@ void TcpIpMeshBackend::acceptRequests()
   }
   
   while (true) {
-    WiFiClient _client = _server.accept();
+    WiFiClient _client = _server.available();
     
     if (!_client)
       break;

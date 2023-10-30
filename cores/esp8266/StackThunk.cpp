@@ -142,12 +142,11 @@ void stack_thunk_dump_stack()
   ets_printf("<<<stack<<<\n");
 }
 
-/* Called when the stack overflow is detected by a thunk.  Main memory is corrupted at this point.
- * Do not return, use libssp-compatible function to notify postmortem and immediately reboot. */
-void stack_thunk_fatal_smashing()
+/* Called when the stack overflow is detected by a thunk.  Main memory is corrupted at this point.  Do not return. */
+void stack_thunk_fatal_overflow()
 {
-    ets_printf("FATAL ERROR: BSSL stack smashing detected\n");
-    __stack_chk_fail();
+    ets_printf("FATAL ERROR: BSSL stack overflow\n");
+    abort();
 }
 
-}
+};

@@ -110,10 +110,7 @@ class Print {
         size_t println(const Printable&);
         size_t println(void);
 
-        // flush():
-        // Empty implementation by default in Print::
-        // should wait for all outgoing characters to be sent, output buffer is empty after this call
-        virtual void flush() { }
+        virtual void flush() { /* Empty implementation for backward compatibility */ }
 
         // by default write timeout is possible (outgoing data from network,serial..)
         // (children can override to false (like String))

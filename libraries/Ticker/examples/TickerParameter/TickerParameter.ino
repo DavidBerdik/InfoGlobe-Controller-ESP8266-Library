@@ -46,4 +46,5 @@ void setup() {
   tickerSetChar.attach_ms(26, setPinChar, (char)1);
 }
 
-void loop() {}
+void loop() {
+}

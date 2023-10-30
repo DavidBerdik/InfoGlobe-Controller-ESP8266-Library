@@ -40,7 +40,6 @@
 
 
 #include <Arduino.h>
-#include <coredecls.h>
 #include "ets_sys.h"
 #include "core_esp8266_waveform.h"
 #include "user_interface.h"
@@ -163,7 +162,7 @@ static IRAM_ATTR void _notifyPWM(PWMState *p, bool idle) {
   forceTimerInterrupt();
   while (pwmState.pwmUpdate) {
     if (idle) {
-      esp_yield();
+      delay(0);
     }
     MEMBARRIER();
   }
@@ -373,8 +372,8 @@ int startWaveformClockCycles_weak(uint8_t pin, uint32_t timeHighCycles, uint32_t
   if (wvfState.waveformEnabled & mask) {
     // Make sure no waveform changes are waiting to be applied
     while (wvfState.waveformToChange) {
-      esp_yield(); // Wait for waveform to update
-      MEMBARRIER();
+      delay(0); // Wait for waveform to update
+      // No mem barrier here, the call to a global function implies global state updated
     }
     wvfState.waveformNewHigh = timeHighCycles;
     wvfState.waveformNewLow = timeLowCycles;
@@ -393,8 +392,8 @@ int startWaveformClockCycles_weak(uint8_t pin, uint32_t timeHighCycles, uint32_t
     initTimer();
     forceTimerInterrupt();
     while (wvfState.waveformToEnable) {
-      esp_yield(); // Wait for waveform to update
-      MEMBARRIER();
+      delay(0); // Wait for waveform to update
+      // No mem barrier here, the call to a global function implies global state updated
     }
   }
 

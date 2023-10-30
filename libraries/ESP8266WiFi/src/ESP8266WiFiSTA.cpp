@@ -28,8 +28,6 @@
 #include "PolledTimeout.h"
 #include "LwipIntf.h"
 
-#include <coredecls.h>
-
 #include "c_types.h"
 #include "ets_sys.h"
 #include "os_type.h"
@@ -46,6 +44,9 @@ extern "C" {
 
 #include "debug.h"
 
+extern "C" void esp_schedule();
+extern "C" void esp_yield();
+
 // -----------------------------------------------------------------------------------------------------------------------
 // ---------------------------------------------------- Private functions ------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------
@@ -61,7 +62,7 @@ static bool sta_config_equal(const station_config& lhs, const station_config& rh
  */
 static bool sta_config_equal(const station_config& lhs, const station_config& rhs) {
 
-#if (NONOSDK >= (0x30000))
+#ifdef NONOSDK3V0
     static_assert(sizeof(station_config) == 116, "struct station_config has changed, please update comparison function");
 #else
     static_assert(sizeof(station_config) == 112, "struct station_config has changed, please update comparison function");
@@ -94,18 +95,8 @@ static bool sta_config_equal(const station_config& lhs, const station_config& rh
         return false;
     }
 
-#if (NONOSDK >= (0x30000))
-    if(lhs.open_and_wep_mode_disable != rhs.open_and_wep_mode_disable) {
-        return false;
-    }
-#endif
-
-#if (NONOSDK >= (0x30200))
-    if(lhs.channel != rhs.channel) {
-        return false;
-    }
-
-    if(lhs.all_channel_scan != rhs.all_channel_scan) {
+#ifdef NONOSDK3V0
+    if (lhs.open_and_wep_mode_disable != rhs.open_and_wep_mode_disable) {
         return false;
     }
 #endif
@@ -145,7 +136,7 @@ wl_status_t ESP8266WiFiSTAClass::begin(const char* ssid, const char *passphrase,
     int passphraseLen = passphrase == nullptr ? 0 : strlen(passphrase);
     if(passphraseLen > 64) {
         // fail passphrase too long!
-        return WL_WRONG_PASSWORD;
+        return WL_CONNECT_FAILED;
     }
 
     struct station_config conf;
@@ -166,12 +157,8 @@ wl_status_t ESP8266WiFiSTAClass::begin(const char* ssid, const char *passphrase,
     }
 
     conf.threshold.rssi = -127;
-#if (NONOSDK >= (0x30000))
+#ifdef NONOSDK3V0
     conf.open_and_wep_mode_disable = !(_useInsecureWEP || *conf.password == 0);
-#endif
-#if (NONOSDK >= (0x30200))
-    conf.channel = channel;
-    conf.all_channel_scan = true;
 #endif
 
     if(bssid) {
@@ -353,48 +340,30 @@ bool ESP8266WiFiSTAClass::reconnect() {
 }
 
 /**
- * Disconnect from the network with clearing saved credentials
- * @param wifioff Bool indicating whether STA should be disabled.
+ * Disconnect from the network
+ * @param wifioff
  * @return  one value of wl_status_t enum
  */
 bool ESP8266WiFiSTAClass::disconnect(bool wifioff) {
-    // Disconnect with clearing saved credentials.
-    return disconnect(wifioff, true);
-}
-
-/**
- * Disconnect from the network
- * @param wifioff Bool indicating whether STA should be disabled. 
- * @param eraseCredentials Bool indicating whether saved credentials should be erased.
- * @return  one value of wl_status_t enum
- */
-bool ESP8266WiFiSTAClass::disconnect(bool wifioff, bool eraseCredentials) {
     bool ret = false;
-
-    if (eraseCredentials) {
-        // Read current config.
-        struct station_config conf;
-        wifi_station_get_config(&conf);
-
-        // Erase credentials.
-        memset(&conf.ssid, 0, sizeof(conf.ssid));
-        memset(&conf.password, 0, sizeof(conf.password));
-
-        // Store modiffied config.
-        ETS_UART_INTR_DISABLE();
-        if(WiFi._persistent) {
-            wifi_station_set_config(&conf);
-        } else {
-            wifi_station_set_config_current(&conf);
-        }
-        ETS_UART_INTR_ENABLE();
-    }
+    struct station_config conf;
+    *conf.ssid = 0;
+    *conf.password = 0;
 
     // API Reference: wifi_station_disconnect() need to be called after system initializes and the ESP8266 Station mode is enabled.
     if (WiFi.getMode() & WIFI_STA)
         ret = wifi_station_disconnect();
     else
         ret = true;
+
+    ETS_UART_INTR_DISABLE();
+    if(WiFi._persistent) {
+        wifi_station_set_config(&conf);
+    } else {
+        wifi_station_set_config_current(&conf);
+    }
+
+    ETS_UART_INTR_ENABLE();
 
     if(wifioff) {
         WiFi.enableSTA(false);

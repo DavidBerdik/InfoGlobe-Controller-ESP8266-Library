@@ -18,18 +18,14 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include <ets_sys.h>
-
+#include "cont.h"
 #include <stddef.h>
 #include <string.h>
+#include "ets_sys.h"
 
-#include "cont.h"
-#include "debug.h"
+extern "C" {
 
-extern "C"
-{
-
-static constexpr unsigned int CONT_STACKGUARD { 0xfeefeffe };
+#define CONT_STACKGUARD 0xfeefeffe
 
 void cont_init(cont_t* cont) {
     memset(cont, 0, sizeof(cont_t));
@@ -46,15 +42,10 @@ void cont_init(cont_t* cont) {
     }
 }
 
-void IRAM_ATTR cont_check(cont_t* cont) {
-    if ((cont->stack_guard1 == CONT_STACKGUARD)
-     && (cont->stack_guard2 == CONT_STACKGUARD))
-    {
-        return;
-    }
+int IRAM_ATTR cont_check(cont_t* cont) {
+    if(cont->stack_guard1 != CONT_STACKGUARD || cont->stack_guard2 != CONT_STACKGUARD) return 1;
 
-    __stack_chk_fail();
-    __builtin_unreachable();
+    return 0;
 }
 
 // No need for this to be in IRAM, not expected to be IRQ called
@@ -71,9 +62,9 @@ int cont_get_free_stack(cont_t* cont) {
     return freeWords * 4;
 }
 
-bool IRAM_ATTR cont_can_suspend(cont_t* cont) {
+bool IRAM_ATTR cont_can_yield(cont_t* cont) {
     return !ETS_INTR_WITHINISR() &&
-           cont->pc_ret != 0 && cont->pc_suspend == 0;
+           cont->pc_ret != 0 && cont->pc_yield == 0;
 }
 
 // No need for this to be in IRAM, not expected to be IRQ called

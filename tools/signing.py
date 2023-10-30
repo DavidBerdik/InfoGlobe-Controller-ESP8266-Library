@@ -4,7 +4,6 @@
 import argparse
 import hashlib
 import os
-import struct
 import subprocess
 import sys
 
@@ -31,7 +30,7 @@ def sign_and_write(data, priv_key, out_file):
         with open(out_file, "wb") as out:
             out.write(data)
             out.write(signout)
-            out.write(struct.pack("<L", len(signout))) # u32, little-endian
+            out.write(b'\x00\x01\x00\x00')
             sys.stderr.write("Signed binary: " + out_file + "\n")
 
 def sign_and_write_legacy(data, priv_key, out_file):
@@ -48,7 +47,7 @@ def sign_and_write_legacy(data, priv_key, out_file):
         with open(out_file, "wb") as out:
             out.write(data)
             out.write(signout)
-            out.write(struct.pack("<L", len(signout))) # u32, little-endian
+            out.write(b'\x00\x01\x00\x00')
             sys.stderr.write("Legacy signed binary: " + out_file + "\n")
 
 def main():

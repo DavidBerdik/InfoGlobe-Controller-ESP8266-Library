@@ -2,17 +2,14 @@
 #
 # CI job for checking examples style
 
-set -e -x
+set -ev
 
-git --version || true
-root=$(git rev-parse --show-toplevel)
+org=$(cd ${0%/*}; pwd)
+${org}/../restyle.sh
 
-# Run formatter and compare what changed in the git tree.
-# Also revert changes which formatter might have done to the submodules,
+# Revert changes which astyle might have done to the submodules,
 # as we don't want to fail the build because of the 3rd party libraries
-
-cd $root
-./tests/restyle.sh
-
+git --version || true
 git submodule foreach --recursive 'git reset --hard'
-git diff --exit-code
+
+git diff --exit-code -- $TRAVIS_BUILD_DIR

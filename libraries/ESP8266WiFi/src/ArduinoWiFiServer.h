@@ -28,18 +28,27 @@
 #endif
 
 template <class TServer, class TClient>
-class ArduinoCompatibleWiFiServerTemplate : public TServer, public Print {
+class ArduinoComptibleWiFiServerTemplate : public TServer {
 public:
 
-  ArduinoCompatibleWiFiServerTemplate(const IPAddress& addr, uint16_t port) : TServer(addr, port) {}
-  ArduinoCompatibleWiFiServerTemplate(uint16_t port) : TServer(port) {}
-  virtual ~ArduinoCompatibleWiFiServerTemplate() {}
+  ArduinoComptibleWiFiServerTemplate(const IPAddress& addr, uint16_t port) : TServer(addr, port) {}
+  ArduinoComptibleWiFiServerTemplate(uint16_t port) : TServer(port) {}
+  virtual ~ArduinoComptibleWiFiServerTemplate() {}
+
+  // https://www.arduino.cc/en/Reference/EthernetServerAccept
+  TClient accept() {
+    return TServer::available();
+  }
 
   // https://www.arduino.cc/en/Reference/WiFiServerAvailable
   TClient available() {
 
-    acceptClients();
- 
+    // update connected clients
+    for (uint8_t i = 0; i < MAX_MONITORED_CLIENTS; i++) {
+      if (!connectedClients[i]) {
+        connectedClients[i] = accept();
+      }
+    }
     // find next client with data available
     for (uint8_t i = 0; i < MAX_MONITORED_CLIENTS; i++) {
       if (index == MAX_MONITORED_CLIENTS) {
@@ -58,12 +67,6 @@ public:
   }
 
   virtual size_t write(const uint8_t *buf, size_t size) override {
-    static uint32_t lastCheck;
-    uint32_t m = millis();
-    if (m - lastCheck > 100) {
-      lastCheck = m;
-      acceptClients();
-    }
     if (size == 0)
       return 0;
     size_t ret = 0;
@@ -124,16 +127,9 @@ private:
   TClient connectedClients[MAX_MONITORED_CLIENTS];
   uint8_t index = 0;
 
-  void acceptClients() {
-    for (uint8_t i = 0; i < MAX_MONITORED_CLIENTS; i++) {
-      if (!connectedClients[i]) {
-        connectedClients[i] = TServer::accept();
-      }
-    }
-  }
 };
 
-typedef ArduinoCompatibleWiFiServerTemplate<WiFiServer, WiFiClient> ArduinoWiFiServer;
-typedef ArduinoCompatibleWiFiServerTemplate<WiFiServerSecure, WiFiClientSecure> ArduinoWiFiServerSecure;
+typedef ArduinoComptibleWiFiServerTemplate<WiFiServer, WiFiClient> ArduinoWiFiServer;
+typedef ArduinoComptibleWiFiServerTemplate<WiFiServerSecure, WiFiClientSecure> ArduinoWiFiServerSecure;
 
 #endif

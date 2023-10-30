@@ -20,6 +20,8 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+#define LWIP_INTERNAL
+
 #include <list>
 #include <errno.h>
 #include <algorithm>
@@ -42,6 +44,7 @@ extern "C" {
 #include "lwip/netif.h"
 #include <include/ClientContext.h>
 #include "c_types.h"
+#include "coredecls.h"
 #include <mmu_iram.h>
 #include <umm_malloc/umm_malloc.h>
 #include <umm_malloc/umm_heap_select.h>
@@ -250,32 +253,19 @@ void WiFiClientSecureCtx::_freeSSL() {
 }
 
 bool WiFiClientSecureCtx::_clientConnected() {
-  if (!_client || (_client->state() == CLOSED)) {
-    return false;
-  }
-
-  return _client->state() == ESTABLISHED;
-}
-
-bool WiFiClientSecureCtx::_engineConnected() {
-  return _clientConnected() && _handshake_done && _eng && (br_ssl_engine_current_state(_eng) != BR_SSL_CLOSED);
+  return (_client && _client->state() == ESTABLISHED);
 }
 
 uint8_t WiFiClientSecureCtx::connected() {
-  if (!_engineConnected()) {
-    return false;
-  }
-
-  if (_pollRecvBuffer() > 0) {
+  if (available() || (_clientConnected() && _handshake_done && (br_ssl_engine_current_state(_eng) != BR_SSL_CLOSED))) {
     return true;
   }
-
-  return _engineConnected();
+  return false;
 }
 
 int WiFiClientSecureCtx::availableForWrite () {
-  // Can't write things when there's no connection or br_ssl engine is closed
-  if (!_engineConnected()) {
+  // code taken from ::_write()
+  if (!connected() || !_handshake_done) {
     return 0;
   }
   // Get BearSSL to a state where we can send
@@ -297,7 +287,7 @@ int WiFiClientSecureCtx::availableForWrite () {
 size_t WiFiClientSecureCtx::_write(const uint8_t *buf, size_t size, bool pmem) {
   size_t sent_bytes = 0;
 
-  if (!size || !_engineConnected()) {
+  if (!connected() || !size || !_handshake_done) {
     return 0;
   }
 
@@ -344,11 +334,10 @@ size_t WiFiClientSecureCtx::write_P(PGM_P buf, size_t size) {
 }
 
 size_t WiFiClientSecureCtx::write(Stream& stream) {
-  if (!_engineConnected()) {
-    DEBUG_BSSL("write: no br_ssl engine to work with\n");
+  if (!connected() || !_handshake_done) {
+    DEBUG_BSSL("write: Connect/handshake not completed yet\n");
     return 0;
   }
-
   return stream.sendAll(this);
 }
 
@@ -357,20 +346,12 @@ int WiFiClientSecureCtx::read(uint8_t *buf, size_t size) {
     return -1;
   }
 
-  // will either check the internal buffer, or try to wait for some data
-  // *may* attempt to write some pending ::write() data b/c of _run_until
-  int avail = _pollRecvBuffer();
-
-  // internal buffer might still be available for some time
-  bool engine = _engineConnected();
-
-  // we're still connected, but nothing to read
-  if (!avail && engine) {
-    return 0;
+  int avail = available();
+  bool conn = connected();
+  if (!avail && conn) {
+    return 0;  // We're still connected, but nothing to read
   }
-
-  // or, available failed to assign the internal buffer and we are already disconnected
-  if (!avail && !engine) {
+  if (!avail && !conn) {
     DEBUG_BSSL("read: Not connected, none left available\n");
     return -1;
   }
@@ -385,11 +366,10 @@ int WiFiClientSecureCtx::read(uint8_t *buf, size_t size) {
     return to_copy;
   }
 
-  if (!engine) {
+  if (!conn) {
     DEBUG_BSSL("read: Not connected\n");
     return -1;
   }
-
   return 0; // If we're connected, no error but no read.
 }
 
@@ -414,10 +394,11 @@ int WiFiClientSecureCtx::read() {
   if (1 == read(&c, 1)) {
     return c;
   }
+  DEBUG_BSSL("read: failed\n");
   return -1;
 }
 
-int WiFiClientSecureCtx::_pollRecvBuffer() {
+int WiFiClientSecureCtx::available() {
   if (_recvapp_buf) {
     return _recvapp_len;  // Anything from last call?
   }
@@ -438,12 +419,8 @@ int WiFiClientSecureCtx::_pollRecvBuffer() {
   return 0;
 }
 
-int WiFiClientSecureCtx::available() {
-  return _pollRecvBuffer();
-}
-
 int WiFiClientSecureCtx::peek() {
-  if (!ctx_present() || (0 == _pollRecvBuffer())) {
+  if (!ctx_present() || !available()) {
     DEBUG_BSSL("peek: Not connected, none left available\n");
     return -1;
   }
@@ -462,7 +439,7 @@ size_t WiFiClientSecureCtx::peekBytes(uint8_t *buffer, size_t length) {
   }
 
   _startMillis = millis();
-  while ((_pollRecvBuffer() < (int) length) && ((millis() - _startMillis) < 5000)) {
+  while ((available() < (int) length) && ((millis() - _startMillis) < 5000)) {
     yield();
   }
 

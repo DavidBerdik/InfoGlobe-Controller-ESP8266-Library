@@ -7,10 +7,10 @@
 
 #ifndef STASSID
 #define STASSID "your-ssid"
-#define STAPSK "your-password"
+#define STAPSK  "your-password"
 #endif
 
-const char* ssid = STASSID;
+const char* ssid     = STASSID;
 const char* password = STAPSK;
 
 const char* host = "djxmmx.net";
@@ -61,7 +61,9 @@ void loop() {
 
   // This will send a string to the server
   Serial.println("sending data to server");
-  if (client.connected()) { client.println("hello from ESP8266"); }
+  if (client.connected()) {
+    client.println("hello from ESP8266");
+  }
 
   // wait for data to be available
   unsigned long timeout = millis();
@@ -88,7 +90,7 @@ void loop() {
   client.stop();
 
   if (wait) {
-    delay(300000);  // execute once every 5 minutes, don't flood remote service
+    delay(300000); // execute once every 5 minutes, don't flood remote service
   }
   wait = true;
 }

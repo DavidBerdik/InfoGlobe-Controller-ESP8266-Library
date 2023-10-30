@@ -34,17 +34,10 @@ namespace BearSSL {
 class WiFiClientSecureCtx : public WiFiClient {
   public:
     WiFiClientSecureCtx();
-    WiFiClientSecureCtx(const WiFiClientSecureCtx &rhs) = delete;
+    WiFiClientSecureCtx(const WiFiClientSecure &rhs) = delete;
     ~WiFiClientSecureCtx() override;
 
     WiFiClientSecureCtx& operator=(const WiFiClientSecureCtx&) = delete;
-
-    // TODO: usage is invalid b/c of deleted copy, but this will only trigger an error when it is actually used by something
-    // TODO: don't remove just yet to avoid including the WiFiClient default implementation and unintentionally causing
-    //       a 'slice' that this method tries to avoid in the first place
-    std::unique_ptr<WiFiClient> clone() const override {
-        return nullptr;
-    }
 
     int connect(IPAddress ip, uint16_t port) override;
     int connect(const String& host, uint16_t port) override;
@@ -195,13 +188,7 @@ class WiFiClientSecureCtx : public WiFiClient {
     unsigned char *_recvapp_buf;
     size_t _recvapp_len;
 
-    int _pollRecvBuffer(); // If there's a buffer with some pending data, return it's length
-                           // If there's no buffer, poll the engine and store any received data there and return the length
-                           // (which also may change the internal state, e.g. make us disconnected)
-
     bool _clientConnected(); // Is the underlying socket alive?
-    bool _engineConnected(); // Are both socket and the bearssl engine alive?
-
     std::shared_ptr<unsigned char> _alloc_iobuf(size_t sz);
     void _freeSSL();
     int _run_until(unsigned target, bool blocking = true);
@@ -244,23 +231,13 @@ class WiFiClientSecure : public WiFiClient {
   // Instead, all virtual functions call their counterpart in "WiFiClientecureCtx* _ctx"
   //          which also derives from WiFiClient (this parent is the one which is eventually used)
 
-  // TODO: notice that this complicates the implementation by having two distinct ways the client connection is managed, consider:
-  // - implementing the secure connection details in the ClientContext
-  //   (i.e. delegate the write & read functions there)
-  // - simplify the inheritance chain by implementing base wificlient class and inherit the original wificlient and wificlientsecure from it
-  // - abstract internals so it's possible to seamlessly =default copy and move with the instance *without* resorting to manual copy and initialization of each member
-
-  // TODO: prefer implementing virtual overrides in the .cpp (or, at least one of them)
-
   public:
 
     WiFiClientSecure():_ctx(new WiFiClientSecureCtx()) { _owned = _ctx.get(); }
     WiFiClientSecure(const WiFiClientSecure &rhs): WiFiClient(), _ctx(rhs._ctx) { if (_ctx) _owned = _ctx.get(); }
     ~WiFiClientSecure() override { _ctx = nullptr; }
 
-    WiFiClientSecure& operator=(const WiFiClientSecure&) = default;
-
-    std::unique_ptr<WiFiClient> clone() const override { return std::unique_ptr<WiFiClient>(new WiFiClientSecure(*this)); }
+    WiFiClientSecure& operator=(const WiFiClientSecure&) = default; // The shared-ptrs handle themselves automatically
 
     uint8_t status() override { return _ctx->status(); }
     int connect(IPAddress ip, uint16_t port) override { return _ctx->connect(ip, port); }
@@ -283,11 +260,6 @@ class WiFiClientSecure : public WiFiClient {
     bool stop(unsigned int maxWaitMs) { return _ctx->stop(maxWaitMs); }
     void flush() override { (void)flush(0); }
     void stop() override { (void)stop(0); }
-
-    IPAddress remoteIP() override { return _ctx->remoteIP(); }
-    uint16_t  remotePort() override { return _ctx->remotePort(); }
-    IPAddress localIP() override { return _ctx->localIP(); }
-    uint16_t  localPort() override { return _ctx->localPort(); }
 
     // Allow sessions to be saved/restored automatically to a memory area
     void setSession(Session *session) { _ctx->setSession(session); }
@@ -357,21 +329,6 @@ class WiFiClientSecure : public WiFiClient {
 
     // consume bytes after use (see peekBuffer)
     virtual void peekConsume (size_t consume) override { return _ctx->peekConsume(consume); }
-  
-    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEPALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEPALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEPALIVE_COUNT) override
-    {
-      _ctx->keepAlive(idle_sec, intv_sec, count);
-    }
-
-    bool isKeepAliveEnabled() const override { return _ctx->isKeepAliveEnabled(); };
-
-    uint16_t getKeepAliveIdle() const override { return _ctx->getKeepAliveIdle(); };
-
-    uint16_t getKeepAliveInterval() const override { return _ctx->getKeepAliveInterval(); };
-
-    uint8_t getKeepAliveCount() const override { return _ctx->getKeepAliveCount(); };
-
-    void disableKeepAlive() override { _ctx->disableKeepAlive(); };
 
   private:
     std::shared_ptr<WiFiClientSecureCtx> _ctx;

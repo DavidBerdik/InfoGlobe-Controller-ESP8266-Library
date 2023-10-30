@@ -47,8 +47,6 @@ public:
   // Finish with the UDP connection
   void stop() override;
   // join a multicast group and listen on the given port
-  virtual uint8_t beginMulticast(IPAddress interfaceAddr, uint16_t port);
-  // join a multicast group and listen on the given port, using a specific interface address
   uint8_t beginMulticast(IPAddress interfaceAddr, IPAddress multicast, uint16_t port);
 
   // Sending UDP packets
@@ -94,7 +92,7 @@ public:
   int read(char* buffer, size_t len) override { return read((unsigned char*)buffer, len); };
   // Return the next byte from the current packet without moving on to the next byte
   int peek() override;
-  void flush() override;	// wait for all outgoing characters to be sent, output buffer is empty after this call
+  void flush() override;	// Finish reading the current packet
 
   // Return the IP address of the host who sent the current incoming packet
   IPAddress remoteIP() override;

@@ -33,6 +33,7 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFiMulti.addAP("SSID", "PASSWORD");
+
 }
 
 void loop() {
@@ -67,7 +68,7 @@ void loop() {
 
       http.end();
     } else {
-      Serial.println("[HTTP] Unable to connect");
+      Serial.printf("[HTTP} Unable to connect\n");
     }
   }
 

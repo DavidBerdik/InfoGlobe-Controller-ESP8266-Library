@@ -90,8 +90,9 @@ public:
       uint8_t obuf[256];
       size_t doneLen = 0;
       size_t sentLen;
+      int i;
 
-      while (src.available() > (int)sizeof(obuf)){
+      while (src.available() > sizeof(obuf)){
         src.read(obuf, sizeof(obuf));
         sentLen = write(obuf, sizeof(obuf));
         doneLen = doneLen + sentLen;
@@ -116,18 +117,6 @@ public:
     time_t getLastWrite();
     time_t getCreationTime();
     void setTimeCallback(time_t (*cb)(void));
-
-    // Stream::send configuration
-
-    bool inputCanTimeout () override {
-        // unavailable data can't become later available
-        return false;
-    }
-
-    bool outputCanTimeout () override {
-        // free space for write can't increase later
-        return false;
-    }
 
 protected:
     FileImplPtr _p;

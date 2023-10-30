@@ -22,24 +22,13 @@
  *
  */
 #include <Arduino.h>
-#include <coredecls.h>
 
 #include "ESP8266HTTPClient.h"
 #include <ESP8266WiFi.h>
 #include <StreamDev.h>
 #include <base64.h>
 
-// per https://github.com/esp8266/Arduino/issues/8231
-// make sure HTTPClient can be utilized as a movable class member
-static_assert(std::is_default_constructible_v<HTTPClient>, "");
-static_assert(!std::is_copy_constructible_v<HTTPClient>, "");
-static_assert(std::is_move_constructible_v<HTTPClient>, "");
-static_assert(std::is_move_assignable_v<HTTPClient>, "");
-
-static const char defaultUserAgentPstr[] PROGMEM = "ESP8266HTTPClient";
-const String HTTPClient::defaultUserAgent = defaultUserAgentPstr;
-
-int HTTPClient::StreamReportToHttpClientReport (Stream::Report streamSendError)
+static int StreamReportToHttpClientReport (Stream::Report streamSendError)
 {
     switch (streamSendError)
     {
@@ -50,6 +39,27 @@ int HTTPClient::StreamReportToHttpClientReport (Stream::Report streamSendError)
     case Stream::Report::Success: return 0;
     }
     return 0; // never reached, keep gcc quiet
+}
+
+/**
+ * constructor
+ */
+HTTPClient::HTTPClient()
+    : _client(nullptr), _userAgent(F("ESP8266HTTPClient"))
+{
+}
+
+/**
+ * destructor
+ */
+HTTPClient::~HTTPClient()
+{
+    if(_client) {
+        _client->stop();
+    }
+    if(_currentHeaders) {
+        delete[] _currentHeaders;
+    }
 }
 
 void HTTPClient::clear()
@@ -70,6 +80,8 @@ void HTTPClient::clear()
  * @return success bool
  */
 bool HTTPClient::begin(WiFiClient &client, const String& url) {
+    _client = &client;
+
     // check for : (http: or https:)
     int index = url.indexOf(':');
     if(index < 0) {
@@ -85,8 +97,6 @@ bool HTTPClient::begin(WiFiClient &client, const String& url) {
     }
 
     _port = (protocol == "https" ? 443 : 80);
-    _client = client.clone();
-
     return beginInternal(url, protocol.c_str());
 }
 
@@ -102,16 +112,9 @@ bool HTTPClient::begin(WiFiClient &client, const String& url) {
  */
 bool HTTPClient::begin(WiFiClient &client, const String& host, uint16_t port, const String& uri, bool https)
 {
-    // Disconnect when reusing HTTPClient to talk to a different host
-    if (!_host.isEmpty() && _host != host) {
-        _canReuse = false;
-        disconnect(true);
-    }
+    _client = &client;
 
-    _client = client.clone();
-
-    clear();
-
+     clear();
     _host = host;
     _port = port;
     _uri = uri;
@@ -162,8 +165,6 @@ bool HTTPClient::beginInternal(const String& __url, const char* expectedProtocol
         _base64Authorization = base64::encode(auth, false /* doNewLines */);
     }
 
-    const String oldHost = _host;
-
     // get port
     index = host.indexOf(':');
     if(index >= 0) {
@@ -173,13 +174,6 @@ bool HTTPClient::beginInternal(const String& __url, const char* expectedProtocol
     } else {
         _host = host;
     }
-
-    // Disconnect when reusing HTTPClient to talk to a different host
-    if (!oldHost.isEmpty() && _host != oldHost) {
-        _canReuse = false;
-        disconnect(true);
-    }
-
     _uri = url;
 
     if ( expectedProtocol != nullptr && _protocol != expectedProtocol) {
@@ -282,24 +276,15 @@ void HTTPClient::setAuthorization(const char * user, const char * password)
 }
 
 /**
- * set the Authorization for the http request
+ * set the Authorizatio for the http request
  * @param auth const char * base64
  */
 void HTTPClient::setAuthorization(const char * auth)
 {
-    if (auth) {
-        setAuthorization(String(auth));
+    if(auth) {
+        _base64Authorization = auth;
+        _base64Authorization.replace(String('\n'), emptyString);
     }
-}
-
-/**
- * set the Authorization for the http request
- * @param auth String base64
- */
-void HTTPClient::setAuthorization(String auth)
-{
-    _base64Authorization = std::move(auth);
-    _base64Authorization.replace(String('\n'), emptyString);
 }
 
 /**
@@ -368,14 +353,6 @@ void HTTPClient::useHTTP10(bool useHTTP10)
 int HTTPClient::GET()
 {
     return sendRequest("GET");
-}
-/**
- * send a DELETE request
- * @return http code
- */
-int HTTPClient::DELETE()
-{
-    return sendRequest("DELETE");
 }
 
 /**
@@ -468,7 +445,7 @@ int HTTPClient::sendRequest(const char * type, const uint8_t * payload, size_t s
         }
 
         // transfer all of it, with send-timeout
-        if (size && StreamConstPtr(payload, size).sendAll(_client.get()) != size)
+        if (size && StreamConstPtr(payload, size).sendAll(_client) != size)
             return returnError(HTTPC_ERROR_SEND_PAYLOAD_FAILED);
 
         // handle Server Response (Header)
@@ -483,7 +460,7 @@ int HTTPClient::sendRequest(const char * type, const uint8_t * payload, size_t s
         //
         redirect = false;
         if (
-            _followRedirects != HTTPC_DISABLE_FOLLOW_REDIRECTS &&
+            _followRedirects != HTTPC_DISABLE_FOLLOW_REDIRECTS && 
             redirectCount < _redirectLimit &&
             _location.length() > 0
         ) {
@@ -496,7 +473,7 @@ int HTTPClient::sendRequest(const char * type, const uint8_t * payload, size_t s
                         // (the RFC require user to accept the redirection)
                         _followRedirects == HTTPC_FORCE_FOLLOW_REDIRECTS ||
                         // allow GET and HEAD methods without force
-                        !strcmp(type, "GET") ||
+                        !strcmp(type, "GET") || 
                         !strcmp(type, "HEAD")
                     ) {
                         redirectCount += 1;
@@ -569,11 +546,10 @@ int HTTPClient::sendRequest(const char * type, Stream * stream, size_t size)
     }
 
     // transfer all of it, with timeout
-    size_t transferred = stream->sendSize(_client.get(), size);
+    size_t transferred = stream->sendSize(_client, size);
     if (transferred != size)
     {
-        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] short write, asked for %zu but got %zu failed.\n", size, transferred);
-        esp_yield();
+        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] short write, asked for %d but got %d failed.\n", size, transferred);
         return returnError(HTTPC_ERROR_SEND_PAYLOAD_FAILED);
     }
 
@@ -620,7 +596,7 @@ WiFiClient& HTTPClient::getStream(void)
 WiFiClient* HTTPClient::getStreamPtr(void)
 {
     if(connected()) {
-        return _client.get();
+        return _client;
     }
 
     DEBUG_HTTPCLIENT("[HTTP-Client] getStreamPtr: not connected\n");
@@ -628,10 +604,99 @@ WiFiClient* HTTPClient::getStreamPtr(void)
 }
 
 /**
+ * write all  message body / payload to Stream
+ * @param stream Stream *
+ * @return bytes written ( negative values are error codes )
+ */
+int HTTPClient::writeToStream(Stream * stream)
+{
+
+    if(!stream) {
+        return returnError(HTTPC_ERROR_NO_STREAM);
+    }
+
+    // Only return error if not connected and no data available, because otherwise ::getString() will return an error instead of an empty
+    // string when the server returned a http code 204 (no content)
+    if(!connected() && _transferEncoding != HTTPC_TE_IDENTITY && _size > 0) {
+        return returnError(HTTPC_ERROR_NOT_CONNECTED);
+    }
+
+    // get length of document (is -1 when Server sends no Content-Length header)
+    int len = _size;
+    int ret = 0;
+
+    if(_transferEncoding == HTTPC_TE_IDENTITY) {
+        // len < 0: transfer all of it, with timeout
+        // len >= 0: max:len, with timeout
+        ret = _client->sendSize(stream, len);
+
+        // do we have an error?
+        if(_client->getLastSendReport() != Stream::Report::Success) {
+            return returnError(StreamReportToHttpClientReport(_client->getLastSendReport()));
+        }
+    } else if(_transferEncoding == HTTPC_TE_CHUNKED) {
+        int size = 0;
+        while(1) {
+            if(!connected()) {
+                return returnError(HTTPC_ERROR_CONNECTION_LOST);
+            }
+            String chunkHeader = _client->readStringUntil('\n');
+
+            if(chunkHeader.length() <= 0) {
+                return returnError(HTTPC_ERROR_READ_TIMEOUT);
+            }
+
+            chunkHeader.trim(); // remove \r
+
+            // read size of chunk
+            len = (uint32_t) strtol((const char *) chunkHeader.c_str(), NULL, 16);
+            size += len;
+            DEBUG_HTTPCLIENT("[HTTP-Client] read chunk len: %d\n", len);
+
+            // data left?
+            if(len > 0) {
+                // read len bytes with timeout
+                int r = _client->sendSize(stream, len);
+                if (_client->getLastSendReport() != Stream::Report::Success)
+                    // not all data transferred
+                    return returnError(StreamReportToHttpClientReport(_client->getLastSendReport()));
+                ret += r;
+            } else {
+
+                // if no length Header use global chunk size
+                if(_size <= 0) {
+                    _size = size;
+                }
+
+                // check if we have write all data out
+                if(ret != _size) {
+                    return returnError(HTTPC_ERROR_STREAM_WRITE);
+                }
+                break;
+            }
+
+            // read trailing \r\n at the end of the chunk
+            char buf[2];
+            auto trailing_seq_len = _client->readBytes((uint8_t*)buf, 2);
+            if (trailing_seq_len != 2 || buf[0] != '\r' || buf[1] != '\n') {
+                return returnError(HTTPC_ERROR_READ_TIMEOUT);
+            }
+
+            delay(0);
+        }
+    } else {
+        return returnError(HTTPC_ERROR_ENCODING);
+    }
+
+    disconnect(true);
+    return ret;
+}
+
+/**
  * return all payload as String (may need lot of ram or trigger out of memory!)
  * @return String
  */
-const String& HTTPClient::getString(int reserve)
+const String& HTTPClient::getString(void)
 {
     if (_payload) {
         return *_payload;
@@ -639,12 +704,12 @@ const String& HTTPClient::getString(int reserve)
 
     _payload.reset(new StreamString());
 
-    if (_size > 0 && _size > reserve)
-        reserve = _size;
-
-    if (reserve > 0 && !_payload->reserve(reserve)) {
-        DEBUG_HTTPCLIENT("[HTTP-Client][getString] not enough memory to reserve a string! need: %d\n", reserve);
-        return *_payload;
+    if(_size > 0) {
+        // try to reserve needed memory
+        if(!_payload->reserve((_size + 1))) {
+            DEBUG_HTTPCLIENT("[HTTP-Client][getString] not enough memory to reserve a string! need: %d\n", (_size + 1));
+            return *_payload;
+        }
     }
 
     writeToStream(_payload.get());
@@ -726,36 +791,39 @@ void HTTPClient::addHeader(const String& name, const String& value, bool first, 
 void HTTPClient::collectHeaders(const char* headerKeys[], const size_t headerKeysCount)
 {
     _headerKeysCount = headerKeysCount;
-    _currentHeaders = std::make_unique<RequestArgument[]>(_headerKeysCount);
+    if(_currentHeaders) {
+        delete[] _currentHeaders;
+    }
+    _currentHeaders = new RequestArgument[_headerKeysCount];
     for(size_t i = 0; i < _headerKeysCount; i++) {
         _currentHeaders[i].key = headerKeys[i];
     }
 }
 
-const String& HTTPClient::header(const char* name)
+String HTTPClient::header(const char* name)
 {
     for(size_t i = 0; i < _headerKeysCount; ++i) {
         if(_currentHeaders[i].key == name) {
             return _currentHeaders[i].value;
         }
     }
-    return emptyString;
+    return String();
 }
 
-const String& HTTPClient::header(size_t i)
+String HTTPClient::header(size_t i)
 {
     if(i < _headerKeysCount) {
         return _currentHeaders[i].value;
     }
-    return emptyString;
+    return String();
 }
 
-const String& HTTPClient::headerName(size_t i)
+String HTTPClient::headerName(size_t i)
 {
     if(i < _headerKeysCount) {
         return _currentHeaders[i].key;
     }
-    return emptyString;
+    return String();
 }
 
 int HTTPClient::headers()
@@ -846,10 +914,8 @@ bool HTTPClient::sendHeader(const char * type)
         header += ':';
         header += String(_port);
     }
-    if (_userAgent.length()) {
-        header += F("\r\nUser-Agent: ");
-        header += _userAgent;
-    }
+    header += F("\r\nUser-Agent: ");
+    header += _userAgent;
 
     if (!_useHTTP10) {
         header += F("\r\nAccept-Encoding: identity;q=1,chunked;q=0.1,*;q=0");
@@ -870,7 +936,7 @@ bool HTTPClient::sendHeader(const char * type)
     DEBUG_HTTPCLIENT("[HTTP-Client] sending request header\n-----\n%s-----\n", header.c_str());
 
     // transfer all of it, with timeout
-    return StreamConstPtr(header).sendAll(_client.get()) == header.length();
+    return StreamConstPtr(header).sendAll(_client) == header.length();
 }
 
 /**
@@ -981,7 +1047,7 @@ int HTTPClient::handleHeaderResponse()
             if((millis() - lastDataTime) > _tcpTimeout) {
                 return HTTPC_ERROR_READ_TIMEOUT;
             }
-            esp_yield();
+            delay(0);
         }
     }
 

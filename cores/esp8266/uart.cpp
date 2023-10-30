@@ -41,7 +41,6 @@
  *
  */
 #include "Arduino.h"
-#include "coredecls.h"
 #include <pgmspace.h>
 #include "gdb_hooks.h"
 #include "uart.h"
@@ -494,13 +493,13 @@ uart_stop_isr(uart_t* uart)
   -tools/sdk/uart_register.h
   -cores/esp8266/esp8266_peri.h
   */
-inline __attribute__((always_inline)) size_t
+inline size_t
 uart_tx_fifo_available(const int uart_nr)
 {
     return (USS(uart_nr) >> USTXC) & 0xff;
 }
 
-inline __attribute__((always_inline)) bool
+inline bool
 uart_tx_fifo_full(const int uart_nr)
 {
     return uart_tx_fifo_available(uart_nr) >= 0x7f;
@@ -567,7 +566,7 @@ uart_wait_tx_empty(uart_t* uart)
         return;
 
     while(uart_tx_fifo_available(uart->uart_nr) > 0)
-        esp_yield();
+        delay(0);
 
 }
 
@@ -696,7 +695,7 @@ uart_init(int uart_nr, int baudrate, int config, int mode, int tx_pin, size_t rx
     }
 
     uart_set_baudrate(uart, baudrate);
-    if((uart->uart_nr == UART0 || uart->uart_nr == UART1) && invert)
+    if(uart->uart_nr == UART0 && invert)
     {
         config |= BIT(UCDTRI) | BIT(UCRTSI) | BIT(UCTXI) | BIT(UCDSRI) | BIT(UCCTSI) | BIT(UCRXI);
     }
@@ -944,23 +943,23 @@ uart_ignore_char(char c)
     (void) c;
 }
 
-inline __attribute__((always_inline)) void
+inline void
 uart_write_char_delay(const int uart_nr, char c)
 {
     while(uart_tx_fifo_full(uart_nr))
-        esp_yield();
+        delay(0);
 
     USF(uart_nr) = c;
 
 }
 
-static void IRAM_ATTR
+static void
 uart0_write_char(char c)
 {
     uart_write_char_delay(0, c);
 }
 
-static void IRAM_ATTR
+static void
 uart1_write_char(char c)
 {
     uart_write_char_delay(1, c);

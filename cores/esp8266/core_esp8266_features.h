@@ -20,8 +20,10 @@
 
  */
 
+
 #ifndef CORE_ESP8266_FEATURES_H
 #define CORE_ESP8266_FEATURES_H
+
 
 #define CORE_HAS_LIBB64
 #define CORE_HAS_BASE64_CLASS
@@ -31,10 +33,9 @@
 #define WIFI_HAS_EVENT_CALLBACK
 #define WIFI_IS_OFF_AT_BOOT
 
-#include <stdbool.h> // bool
+#include <stdlib.h> // malloc()
 #include <stddef.h> // size_t
 #include <stdint.h>
-#include <stdlib.h> // malloc()
 
 #ifndef __STRINGIFY
 #define __STRINGIFY(a) #a
@@ -117,25 +118,13 @@ int esp_get_cpu_freq_mhz()
 #else
 inline int esp_get_cpu_freq_mhz()
 {
-    uint8_t system_get_cpu_freq(void);
     return system_get_cpu_freq();
 }
 #endif
 
-
 // Call this function in your setup() to cause the phase locked version of the generator to
 // be linked in automatically.  Otherwise, the default PWM locked version will be used.
 void enablePhaseLockedWaveform(void);
-
-// Determine when the sketch runs on ESP8285
-#if !defined(CORE_MOCK)
-bool esp_is_8285() __attribute__((const, nothrow));
-#else
-inline bool esp_is_8285()
-{
-    return false;
-}
-#endif
 
 #ifdef __cplusplus
 }

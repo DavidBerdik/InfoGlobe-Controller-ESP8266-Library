@@ -22,11 +22,8 @@
 
  */
 
-#include <cstring>
 #include <list>
-#include <memory>
-#include <type_traits>
-
+#include <string.h>
 #include <coredecls.h>
 #include <PolledTimeout.h>
 #include "ESP8266WiFi.h"
@@ -52,8 +49,9 @@ extern "C" {
 #include "debug.h"
 #include "include/WiFiState.h"
 
-// see comments on wifi_station_hostname in LwipIntf.cpp
-extern "C" char* wifi_station_hostname; // sdk's hostname location
+extern "C" void esp_schedule();
+extern "C" void esp_yield();
+
 
 // -----------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------- Generic WiFi function -----------------------------------------------
@@ -209,10 +207,7 @@ WiFiEventHandler ESP8266WiFiGenericClass::onSoftAPModeProbeRequestReceived(std::
 WiFiEventHandler ESP8266WiFiGenericClass::onWiFiModeChange(std::function<void(const WiFiEventModeChange&)> f)
 {
     WiFiEventHandler handler = std::make_shared<WiFiEventHandlerOpaque>(WIFI_EVENT_MODE_CHANGE, [f](System_Event_t* e){
-        auto& src = e->event_info.opmode_changed;
-        WiFiEventModeChange dst;
-        dst.oldMode = (WiFiMode_t)src.old_opmode;
-        dst.newMode = (WiFiMode_t)src.new_opmode;
+        WiFiEventModeChange& dst = *reinterpret_cast<WiFiEventModeChange*>(&e->event_info);
         f(dst);
     });
     sCbEventList.push_back(handler);
@@ -228,14 +223,9 @@ void ESP8266WiFiGenericClass::_eventCallback(void* arg)
     System_Event_t* event = reinterpret_cast<System_Event_t*>(arg);
     DEBUG_WIFI("wifi evt: %d\n", event->event);
 
-    if (event->event == EVENT_STAMODE_DISCONNECTED) {
+    if(event->event == EVENT_STAMODE_DISCONNECTED) {
         DEBUG_WIFI("STA disconnect: %d\n", event->event_info.disconnected.reason);
-        // workaround for https://github.com/esp8266/Arduino/issues/7432
-        // still delivers the event, just handle this specific case
-        if ((wifi_station_get_connect_status() == STATION_GOT_IP) && !wifi_station_get_reconnect_policy()) {
-            DEBUG_WIFI("forcibly stopping the station connection manager\n");
-            wifi_station_disconnect();
-        }
+        WiFiClient::stopAll();
     }
 
     if (event->event == EVENT_STAMODE_AUTHMODE_CHANGE) {
@@ -306,7 +296,7 @@ bool ESP8266WiFiGenericClass::setSleepMode(WiFiSleepType_t type, uint8_t listenI
 
     */
 
-#if (NONOSDK >= (0x30000))
+#ifdef NONOSDK3V0
 
 #ifdef DEBUG_ESP_WIFI
     if (listenInterval && type == WIFI_NONE_SLEEP)
@@ -337,9 +327,9 @@ bool ESP8266WiFiGenericClass::setSleepMode(WiFiSleepType_t type, uint8_t listenI
             }
         }
     }
-#else  // (NONOSDK >= (0x30000))
+#else  // !defined(NONOSDK3V0)
     (void)listenInterval;
-#endif // (NONOSDK >= (0x30000))
+#endif // !defined(NONOSDK3V0)
 
     bool ret = wifi_set_sleep_type((sleep_type_t) type);
     if (!ret) {
@@ -425,10 +415,7 @@ bool ESP8266WiFiGenericClass::mode(WiFiMode_t m) {
         return true;
     }
 
-    char backup_hostname [33] { 0 }; // hostname is 32 chars long (RFC)
-
     if (m != WIFI_OFF && wifi_fpm_get_sleep_type() != NONE_SLEEP_T) {
-        memcpy(backup_hostname, wifi_station_hostname, sizeof(backup_hostname));
         // wifi starts asleep by default
         wifi_fpm_do_wakeup();
         wifi_fpm_close();
@@ -451,17 +438,16 @@ bool ESP8266WiFiGenericClass::mode(WiFiMode_t m) {
     //tasks to wait correctly.
     constexpr unsigned int timeoutValue = 1000; //1 second
     if(can_yield()) {
-        // check opmode every 100ms or give up after timeout
-        esp_delay(timeoutValue, [m]() { return wifi_get_opmode() != m; }, 100);
+        using oneShot = esp8266::polledTimeout::oneShotFastMs;
+        oneShot timeout(timeoutValue);
+        while(wifi_get_opmode() != (uint8) m && !timeout)
+            delay(5);
 
         //if at this point mode still hasn't been reached, give up
         if(wifi_get_opmode() != (uint8) m) {
             return false; //timeout
         }
     }
-
-    if (backup_hostname[0])
-        memcpy(wifi_station_hostname, backup_hostname, sizeof(backup_hostname));
 
     return ret;
 }
@@ -532,9 +518,9 @@ bool ESP8266WiFiGenericClass::forceSleepBegin(uint32 sleepUs) {
     }
 
     wifi_fpm_set_sleep_type(MODEM_SLEEP_T);
-    esp_yield();
+    delay(0);
     wifi_fpm_open();
-    esp_yield();
+    delay(0);
     auto ret = wifi_fpm_do_sleep(sleepUs);
     if (ret != 0)
     {
@@ -573,10 +559,10 @@ bool ESP8266WiFiGenericClass::forceSleepWake() {
  * @return interval
  */
 uint8_t ESP8266WiFiGenericClass::getListenInterval () {
-#if (NONOSDK >= (0x30000))
-    return wifi_get_listen_interval();
-#else
+#ifndef NONOSDK3V0
     return 0;
+#else
+    return wifi_get_listen_interval();
 #endif
 }
 
@@ -585,10 +571,10 @@ uint8_t ESP8266WiFiGenericClass::getListenInterval () {
  * @return true if max level
  */
 bool ESP8266WiFiGenericClass::isSleepLevelMax () {
-#if (NONOSDK >= (0x30000))
-    return wifi_get_sleep_level() == MAX_SLEEP_T;
-#else
+#ifndef NONOSDK3V0
     return false;
+#else
+    return wifi_get_sleep_level() == MAX_SLEEP_T;
 #endif
 }
 
@@ -597,80 +583,9 @@ bool ESP8266WiFiGenericClass::isSleepLevelMax () {
 // ------------------------------------------------ Generic Network function ---------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------
 
-namespace {
+void wifi_dns_found_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg);
 
-struct _dns_found_result {
-    IPAddress addr;
-    bool done;
-};
-
-}
-
-static void _dns_found_callback(const char *, const ip_addr_t *, void *);
-
-static int hostByNameImpl(const char* aHostname, IPAddress& aResult, uint32_t timeout_ms, DNSResolveType resolveType) {
-    if (aResult.fromString(aHostname)) {
-        DEBUG_WIFI_GENERIC("[hostByName] Host: %s is IP!\n", aHostname);
-        return 1;
-    }
-
-    static_assert(std::is_same_v<uint8_t, std::underlying_type_t<decltype(resolveType)>>, "");
-    DEBUG_WIFI_GENERIC("[hostByName] request IP for: %s\n", aHostname);
-
-    ip_addr_t addr;
-    auto pending = std::make_unique<_dns_found_result>(
-        _dns_found_result{
-            .addr = IPADDR_NONE,
-            .done = false,
-        });
-
-    err_t err = dns_gethostbyname_addrtype(aHostname,
-        &addr, &_dns_found_callback, pending.get(),
-        static_cast<uint8_t>(resolveType));
-
-    switch (err) {
-    // Address already known
-    case ERR_OK:
-        aResult = addr;
-        break;
-
-    // We are no longer able to issue requests
-    case ERR_MEM:
-        break;
-
-    // We need to wait for c/b to fire *or* we exit on our own timeout
-    // (which also requires us to notify the c/b that it is supposed to delete the pending obj)
-    case ERR_INPROGRESS:
-        // sleep until dns_found_callback is called or timeout is reached
-        esp_delay(timeout_ms, [&]() { return !pending->done; });
-
-        if (pending->done) {
-            if ((pending->addr).isSet()) {
-                aResult = pending->addr;
-                err = ERR_OK;
-            }
-        } else {
-            pending->done = true;
-            pending.release();
-            err = ERR_TIMEOUT;
-        }
-
-        break;
-    }
-
-    if (err == ERR_OK) {
-        DEBUG_WIFI_GENERIC("[hostByName] Host: %s IP: %s\n", aHostname, aResult.toString().c_str());
-        return 1;
-    }
-
-    DEBUG_WIFI_GENERIC("[hostByName] Host: %s lookup error: %s (%d)!\n",
-            aHostname,
-            (err == ERR_TIMEOUT) ? "Timeout" :
-            (err == ERR_INPROGRESS) ? "No response" :
-                "Unknown", static_cast<int>(err));
-
-    return 0;
-}
+static bool _dns_lookup_pending = false;
 
 /**
  * Resolve the given hostname to an IP address.
@@ -681,18 +596,97 @@ static int hostByNameImpl(const char* aHostname, IPAddress& aResult, uint32_t ti
  */
 int ESP8266WiFiGenericClass::hostByName(const char* aHostname, IPAddress& aResult)
 {
-    return hostByNameImpl(aHostname, aResult, DNSDefaultTimeoutMs, DNSResolveTypeDefault);
+    return hostByName(aHostname, aResult, 10000);
 }
+
 
 int ESP8266WiFiGenericClass::hostByName(const char* aHostname, IPAddress& aResult, uint32_t timeout_ms)
 {
-    return hostByNameImpl(aHostname, aResult, timeout_ms, DNSResolveTypeDefault);
+    ip_addr_t addr;
+    aResult = static_cast<uint32_t>(INADDR_NONE);
+
+    if(aResult.fromString(aHostname)) {
+        // Host name is a IP address use it!
+        DEBUG_WIFI_GENERIC("[hostByName] Host: %s is a IP!\n", aHostname);
+        return 1;
+    }
+
+    DEBUG_WIFI_GENERIC("[hostByName] request IP for: %s\n", aHostname);
+#if LWIP_IPV4 && LWIP_IPV6
+    err_t err = dns_gethostbyname_addrtype(aHostname, &addr, &wifi_dns_found_callback, &aResult,LWIP_DNS_ADDRTYPE_DEFAULT);
+#else
+    err_t err = dns_gethostbyname(aHostname, &addr, &wifi_dns_found_callback, &aResult);
+#endif
+    if(err == ERR_OK) {
+        aResult = IPAddress(&addr);
+    } else if(err == ERR_INPROGRESS) {
+        _dns_lookup_pending = true;
+        delay(timeout_ms);
+        // will resume on timeout or when wifi_dns_found_callback fires
+        _dns_lookup_pending = false;
+        // will return here when dns_found_callback fires
+        if(aResult.isSet()) {
+            err = ERR_OK;
+        }
+    }
+
+    if(err != 0) {
+        DEBUG_WIFI_GENERIC("[hostByName] Host: %s lookup error: %d!\n", aHostname, (int)err);
+    } else {
+        DEBUG_WIFI_GENERIC("[hostByName] Host: %s IP: %s\n", aHostname, aResult.toString().c_str());
+    }
+
+    return (err == ERR_OK) ? 1 : 0;
 }
 
 #if LWIP_IPV4 && LWIP_IPV6
 int ESP8266WiFiGenericClass::hostByName(const char* aHostname, IPAddress& aResult, uint32_t timeout_ms, DNSResolveType resolveType)
 {
-    return hostByNameImpl(aHostname, aResult, timeout_ms, resolveType);
+    ip_addr_t addr;
+    err_t err;
+    aResult = static_cast<uint32_t>(INADDR_NONE);
+
+    if(aResult.fromString(aHostname)) {
+        // Host name is a IP address use it!
+        DEBUG_WIFI_GENERIC("[hostByName] Host: %s is a IP!\n", aHostname);
+        return 1;
+    }
+
+    DEBUG_WIFI_GENERIC("[hostByName] request IP for: %s\n", aHostname);
+    switch(resolveType)
+    {
+      // Use selected addrtype
+      case DNSResolveType::DNS_AddrType_IPv4:
+      case DNSResolveType::DNS_AddrType_IPv6:
+      case DNSResolveType::DNS_AddrType_IPv4_IPv6:
+      case DNSResolveType::DNS_AddrType_IPv6_IPv4:
+         err = dns_gethostbyname_addrtype(aHostname, &addr, &wifi_dns_found_callback, &aResult, (uint8_t) resolveType);
+	 break;
+      default:
+         err = dns_gethostbyname_addrtype(aHostname, &addr, &wifi_dns_found_callback, &aResult, LWIP_DNS_ADDRTYPE_DEFAULT); // If illegal type, use default.
+	 break;
+    }
+
+    if(err == ERR_OK) {
+        aResult = IPAddress(&addr);
+    } else if(err == ERR_INPROGRESS) {
+        _dns_lookup_pending = true;
+        delay(timeout_ms);
+        // will resume on timeout or when wifi_dns_found_callback fires
+        _dns_lookup_pending = false;
+        // will return here when dns_found_callback fires
+        if(aResult.isSet()) {
+            err = ERR_OK;
+        }
+    }
+
+    if(err != 0) {
+        DEBUG_WIFI_GENERIC("[hostByName] Host: %s lookup error: %d!\n", aHostname, (int)err);
+    } else {
+        DEBUG_WIFI_GENERIC("[hostByName] Host: %s IP: %s\n", aHostname, aResult.toString().c_str());
+    }
+
+    return (err == ERR_OK) ? 1 : 0;
 }
 #endif
 
@@ -702,20 +696,16 @@ int ESP8266WiFiGenericClass::hostByName(const char* aHostname, IPAddress& aResul
  * @param ipaddr
  * @param callback_arg
  */
-static void _dns_found_callback(const char*, const ip_addr_t* ipaddr, void* arg)
+void wifi_dns_found_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
 {
-    auto result = reinterpret_cast<_dns_found_result*>(arg);
-    if (result->done) {
-        delete result;
+    (void) name;
+    if (!_dns_lookup_pending) {
         return;
     }
-
-    if (ipaddr) {
-        result->addr = IPAddress(ipaddr);
+    if(ipaddr) {
+        (*reinterpret_cast<IPAddress*>(callback_arg)) = IPAddress(ipaddr);
     }
-
-    result->done = true;
-    esp_schedule();
+    esp_schedule(); // break delay in hostByName
 }
 
 uint32_t ESP8266WiFiGenericClass::shutdownCRC (const WiFiState& state)

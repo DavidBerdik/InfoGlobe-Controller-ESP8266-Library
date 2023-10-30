@@ -1,14 +1,13 @@
 #!/bin/bash
 
+READELF="$TRAVIS_BUILD_DIR/tools/xtensa-lx106-elf/bin/xtensa-lx106-elf-readelf"
+
 set -ev
 
-root=$(git rev-parse --show-toplevel)
-READELF="$root/tools/xtensa-lx106-elf/bin/xtensa-lx106-elf-readelf"
-
-cd $root/tools
+cd $TRAVIS_BUILD_DIR/tools
 python3 get.py -q
 
-cd $root/bootloaders/eboot
+cd $TRAVIS_BUILD_DIR/bootloaders/eboot
 
 "$READELF" -x .data -x .text eboot.elf > git.txt
 make clean

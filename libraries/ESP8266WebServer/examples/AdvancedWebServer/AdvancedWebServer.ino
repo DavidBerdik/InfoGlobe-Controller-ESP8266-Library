@@ -32,11 +32,10 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-#include <StreamString.h>
 
 #ifndef STASSID
 #define STASSID "your-ssid"
-#define STAPSK "your-password"
+#define STAPSK  "your-password"
 #endif
 
 const char *ssid = STASSID;
@@ -48,14 +47,14 @@ const int led = 13;
 
 void handleRoot() {
   digitalWrite(led, 1);
+  char temp[400];
   int sec = millis() / 1000;
   int min = sec / 60;
   int hr = min / 60;
 
-  StreamString temp;
-  temp.reserve(500);  // Preallocate a large chunk to avoid memory fragmentation
-  temp.printf("\
-<html>\
+  snprintf(temp, 400,
+
+           "<html>\
   <head>\
     <meta http-equiv='refresh' content='5'/>\
     <title>ESP8266 Demo</title>\
@@ -69,8 +68,10 @@ void handleRoot() {
     <img src=\"/test.svg\" />\
   </body>\
 </html>",
-              hr, min % 60, sec % 60);
-  server.send(200, "text/html", temp.c_str());
+
+           hr, min % 60, sec % 60
+          );
+  server.send(200, "text/html", temp);
   digitalWrite(led, 0);
 }
 
@@ -85,7 +86,9 @@ void handleNotFound() {
   message += server.args();
   message += "\n";
 
-  for (uint8_t i = 0; i < server.args(); i++) { message += " " + server.argName(i) + ": " + server.arg(i) + "\n"; }
+  for (uint8_t i = 0; i < server.args(); i++) {
+    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+  }
 
   server.send(404, "text/plain", message);
   digitalWrite(led, 0);
@@ -130,7 +133,9 @@ void setup(void) {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  if (MDNS.begin("esp8266")) { Serial.println("MDNS responder started"); }
+  if (MDNS.begin("esp8266")) {
+    Serial.println("MDNS responder started");
+  }
 
   server.on("/", handleRoot);
   server.on("/test.svg", drawGraph);
@@ -146,3 +151,4 @@ void loop(void) {
   server.handleClient();
   MDNS.update();
 }
+

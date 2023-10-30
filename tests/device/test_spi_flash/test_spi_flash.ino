@@ -1,4 +1,5 @@
 #include <BSTest.h>
+#include <ESP8266WiFi.h>
 
 BS_ENV_DECLARE();
 
@@ -173,11 +174,6 @@ TEST_CASE("Unaligned page cross only", "[spi_flash]")
     CHECK(testFlash(0xa0000 + 254, 1, 3));
     CHECK(testFlash(0xa0000 + 255, 0, 2));
     CHECK(testFlash(0xa0000 + 255, 1, 2));
-}
-
-TEST_CASE("Unaligned page cross with unaligned size (#8372, #8588, #8605)", "[spi_flash]")
-{
-    CHECK(testFlash(0xa00b, 0, 202));
 }
 
 void loop ()
