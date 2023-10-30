@@ -131,22 +131,22 @@
           ],
           "toolsDependencies": [
             {
-              "packager": "esp8266",
+              "packager": "esp8266-infoglobe",
               "version": "3.0.4-gcc10.3-1757bed",
               "name": "xtensa-lx106-elf-gcc"
             },
             {
-              "packager": "esp8266",
+              "packager": "esp8266-infoglobe",
               "version": "3.0.4-gcc10.3-1757bed",
               "name": "mkspiffs"
             },
             {
-              "packager": "esp8266",
+              "packager": "esp8266-infoglobe",
               "version": "3.0.4-gcc10.3-1757bed",
               "name": "mklittlefs"
             },
             {
-              "packager": "esp8266",
+              "packager": "esp8266-infoglobe",
               "version": "3.7.2-post1",
               "name": "python3"
             }
