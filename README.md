@@ -6,7 +6,7 @@ This is a modified version of the [ESP8266 Library for Arduino](https://github.c
 To use this library, add the following URL to your board manager URLs list:
 
 ```
-	https://raw.githubusercontent.com/DavidBerdik/InfoGlobe-Controller-ESP8266-Library/master/package_esp8266-infoglobe_index.json
+https://raw.githubusercontent.com/DavidBerdik/InfoGlobe-Controller-ESP8266-Library/master/package_esp8266-infoglobe_index.json
 ```
 
 The content of the original project's README follows:
